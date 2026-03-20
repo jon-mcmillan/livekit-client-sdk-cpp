@@ -17,8 +17,9 @@
 #include "livekit/logging.h"
 
 #include <mutex>
+#include <utility>
 
-#include <spdlog/sinks/callback_sink.h>
+#include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -26,6 +27,29 @@ namespace livekit {
 namespace {
 
 const char *kLoggerName = "livekit";
+
+LogLevel fromSpdlogLevel(spdlog::level::level_enum level);
+
+class CallbackSink final : public spdlog::sinks::base_sink<std::mutex> {
+public:
+  explicit CallbackSink(LogCallback callback) : callback_(std::move(callback)) {}
+
+protected:
+  void sink_it_(const spdlog::details::log_msg &msg) override {
+    if (!callback_) {
+      return;
+    }
+
+    callback_(fromSpdlogLevel(msg.level),
+              std::string(msg.logger_name.data(), msg.logger_name.size()),
+              std::string(msg.payload.data(), msg.payload.size()));
+  }
+
+  void flush_() override {}
+
+private:
+  LogCallback callback_;
+};
 
 spdlog::level::level_enum toSpdlogLevel(LogLevel level) {
   switch (level) {
@@ -127,12 +151,7 @@ void setLogCallback(LogCallback callback) {
   }
 
   if (callback) {
-    auto sink = std::make_shared<spdlog::sinks::callback_sink_mt>(
-        [cb = std::move(callback)](const spdlog::details::log_msg &msg) {
-          cb(fromSpdlogLevel(msg.level),
-             std::string(msg.logger_name.data(), msg.logger_name.size()),
-             std::string(msg.payload.data(), msg.payload.size()));
-        });
+    auto sink = std::make_shared<CallbackSink>(std::move(callback));
     logger = std::make_shared<spdlog::logger>(kLoggerName, sink);
   } else {
     logger = createDefaultLogger();
