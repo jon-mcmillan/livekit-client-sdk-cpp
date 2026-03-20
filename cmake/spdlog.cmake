@@ -1,7 +1,7 @@
 # cmake/spdlog.cmake
 #
 # Windows: use vcpkg spdlog
-# macOS/Linux: vendored spdlog via FetchContent (static library)
+# macOS/Linux: prefer a system spdlog and fall back to a vendored copy
 #
 # Exposes:
 #   - Target spdlog::spdlog
@@ -49,6 +49,11 @@ message(STATUS "LiveKit compile-time log level: ${_LK_LOG_LEVEL_UPPER} (SPDLOG_A
 include(FetchContent)
 
 set(LIVEKIT_SPDLOG_VERSION "1.15.1" CACHE STRING "Vendored spdlog version")
+option(
+  LIVEKIT_PREFER_SYSTEM_SPDLOG
+  "Prefer a system-installed spdlog on platforms that support it"
+  ON
+)
 
 # ---------------------------------------------------------------------------
 # Windows: use vcpkg
@@ -57,6 +62,17 @@ if(WIN32 AND LIVEKIT_USE_VCPKG)
   find_package(spdlog CONFIG REQUIRED)
   message(STATUS "Windows: using vcpkg spdlog")
   return()
+endif()
+
+# ---------------------------------------------------------------------------
+# macOS/Linux: prefer the system package when available
+# ---------------------------------------------------------------------------
+if(LIVEKIT_PREFER_SYSTEM_SPDLOG)
+  find_package(spdlog CONFIG QUIET)
+  if(spdlog_FOUND)
+    message(STATUS "macOS/Linux: using system spdlog")
+    return()
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------
