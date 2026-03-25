@@ -101,8 +101,10 @@ jobs:
         run: |
           chmod +x build.sh
           version="${{ steps.version.outputs.version }}"
+          # CMake project(VERSION) only accepts numeric versions (no -alpha.1 etc.)
+          cmake_version="${version%%-*}"
           bundleDir="sdk-out/livekit-sdk-${{ matrix.name }}-${version}"
-          ./build.sh release --version "$version" --bundle --prefix "$bundleDir"
+          ./build.sh release --version "$cmake_version" --bundle --prefix "$bundleDir"
 
           echo "Bundle contents:"
           find "$bundleDir" -type f | head -120
