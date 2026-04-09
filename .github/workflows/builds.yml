@@ -1,36 +1,6 @@
 name: Builds
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - src/**
-      - include/**
-      - examples/**
-      - bridge/**
-      - client-sdk-rust/**
-      - CMakeLists.txt
-      - build.sh
-      - build.cmd
-      - vcpkg.json
-      - CMakePresets.json
-      - docker/Dockerfile
-      - .github/workflows/**
-  pull_request:
-    branches: ["main"]
-    paths:
-      - src/**
-      - include/**
-      - examples/**
-      - bridge/**
-      - client-sdk-rust/**
-      - CMakeLists.txt
-      - build.sh
-      - build.cmd
-      - vcpkg.json
-      - CMakePresets.json
-      - docker/Dockerfile
-      - .github/workflows/**
   workflow_dispatch:
 
 permissions:
