@@ -1,4 +1,4 @@
-name: Build SDK (Linux distros)
+name: Build SDK (Jammy Linux)
 
 on:
   workflow_dispatch:
@@ -79,13 +79,10 @@ jobs:
 
       - name: Set build environment
         run: |
-          CXXFLAGS="-Wno-deprecated-declarations"
           # GCC 11 on 22.04 doesn't have -Wno-changes-meaning (added in GCC 14).
           # WebRTC headers trigger "changes meaning of 'Network'" which -fpermissive
           # downgrades to a warning.
-          if [[ "${{ matrix.os }}" == ubuntu-22.04* ]]; then
-            CXXFLAGS="$CXXFLAGS -fpermissive"
-          fi
+          CXXFLAGS="-Wno-deprecated-declarations -fpermissive"
           echo "CXXFLAGS=$CXXFLAGS" >> $GITHUB_ENV
           echo "CFLAGS=-Wno-deprecated-declarations" >> $GITHUB_ENV
           LLVM_VERSION=$(llvm-config --version | cut -d. -f1)
@@ -147,11 +144,11 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ github.event.inputs.version }}
-          name: LiveKit C++ SDK v${{ github.event.inputs.version }} (Linux)
+          name: LiveKit C++ SDK v${{ github.event.inputs.version }} (Jammy Linux)
           draft: true
           files: ${{ github.workspace }}/release-assets/*
           body: |
-            Linux distro builds of LiveKit C++ SDK v${{ github.event.inputs.version }}.
+            Ubuntu 22.04 (Jammy) Linux builds of LiveKit C++ SDK v${{ github.event.inputs.version }}.
 
             Built from ref: `${{ github.event.inputs.ref || github.ref }}`
 
