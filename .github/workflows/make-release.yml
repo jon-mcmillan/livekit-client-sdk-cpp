@@ -7,6 +7,10 @@ on:
         description: 'Version to release (e.g., 0.1.0)'
         required: true
         type: string
+      ref:
+        description: 'Git ref to build (tag, branch, or SHA). Use vX.Y.Z for release tags.'
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,21 +25,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            name: linux-x64
+          - os: ubuntu-22.04
+            name: linux-x64-jammy
             generator: Ninja
-          - os: ubuntu-24.04-arm
-            name: linux-arm64
+          - os: ubuntu-22.04-arm
+            name: linux-arm64-jammy
             generator: Ninja
-          - os: macos-latest
-            name: macos-arm64
-            generator: Ninja
-          - os: macos-latest
-            name: macos-x64
-            generator: Ninja
-          - os: windows-latest
-            name: windows-x64
-            generator: "Visual Studio 17 2022"
 
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -44,6 +39,7 @@ jobs:
       - name: Checkout (with submodules)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ github.event.inputs.ref }}
           submodules: recursive
           fetch-depth: 0
 
@@ -75,6 +71,10 @@ jobs:
           fi
           if [[ "$VERSION" =~ [[:space:]] ]]; then
             echo "ERROR: Version contains whitespace: '$VERSION'"
+            exit 1
+          fi
+          if [[ "${{ github.event.inputs.ref }}" != "v${VERSION}" ]]; then
+            echo "ERROR: ref must match version tag v${VERSION}; got '${{ github.event.inputs.ref }}'"
             exit 1
           fi
 
@@ -111,8 +111,12 @@ jobs:
             libasound2-dev libpulse-dev \
             libssl-dev \
             libprotobuf-dev protobuf-compiler \
-            libabsl-dev \
             libwayland-dev libdecor-0-dev
+
+          # libabsl-dev is only available/needed on newer Ubuntu runners.
+          if [[ "${{ matrix.os }}" != ubuntu-22.04* ]]; then
+            sudo apt-get install -y libabsl-dev
+          fi
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
@@ -145,7 +149,14 @@ jobs:
       - name: Set Linux build environment
         if: runner.os == 'Linux'
         run: |
-          echo "CXXFLAGS=-Wno-deprecated-declarations" >> $GITHUB_ENV
+          CXXFLAGS="-Wno-deprecated-declarations"
+          # GCC 11 on 22.04 doesn't have -Wno-changes-meaning (added in GCC 14).
+          # WebRTC headers trigger "changes meaning of 'Network'" which -fpermissive
+          # downgrades to a warning.
+          if [[ "${{ matrix.os }}" == ubuntu-22.04* ]]; then
+            CXXFLAGS="$CXXFLAGS -fpermissive"
+          fi
+          echo "CXXFLAGS=$CXXFLAGS" >> $GITHUB_ENV
           echo "CFLAGS=-Wno-deprecated-declarations" >> $GITHUB_ENV
           LLVM_VERSION=$(llvm-config --version | cut -d. -f1)
           echo "LIBCLANG_PATH=/usr/lib/llvm-${LLVM_VERSION}/lib" >> $GITHUB_ENV
@@ -157,6 +168,8 @@ jobs:
         run: |
           chmod +x build.sh
           version="${{ steps.version.outputs.version }}"
+          # CMake project(VERSION) only accepts numeric versions (no -alpha.1 etc.)
+          cmake_version="${version%%-*}"
           bundleDir="sdk-out/livekit-sdk-${{ matrix.name }}-${version}"
           if [[ -z "$version" ]]; then
             echo "ERROR: version is empty"
@@ -170,6 +183,8 @@ jobs:
 
           if [[ "${{ matrix.name }}" == "macos-x64" ]]; then
             ./build.sh release-examples --version "$version" --bundle --prefix "$bundleDir" --macos-arch x86_64
+          elif [[ "${{ matrix.name }}" == *-jammy ]]; then
+            ./build.sh release --version "$cmake_version" --bundle --prefix "$bundleDir"
           else
             ./build.sh release-examples --version "$version" --bundle --prefix "$bundleDir"
           fi
@@ -267,7 +282,17 @@ jobs:
           echo "Artifacts downloaded:"
           ls -la
           
-          # Create tar.gz for Linux and macOS
+          # Create tar.gz for Jammy Linux artifacts
+          for platform in linux-x64-jammy linux-arm64-jammy; do
+            dirName="livekit-sdk-${platform}-${VERSION}"
+            if [[ -d "${dirName}" ]]; then
+              echo "Creating archive for ${platform}..."
+              tar -czf "${{ github.workspace }}/release-assets/${dirName}.tar.gz" "${dirName}"
+              echo "Created: ${dirName}.tar.gz"
+            fi
+          done
+
+          # Create tar.gz for upstream Linux and macOS artifacts if matrix entries are restored.
           for platform in linux-x64 linux-arm64 macos-arm64 macos-x64; do
             dirName="livekit-sdk-${platform}-${VERSION}"
             if [[ -d "${dirName}" ]]; then
@@ -276,8 +301,8 @@ jobs:
               echo "Created: ${dirName}.tar.gz"
             fi
           done
-          
-          # Create zip for Windows
+
+          # Create zip for Windows if its matrix entry is restored.
           dirName="livekit-sdk-windows-x64-${VERSION}"
           if [[ -d "${dirName}" ]]; then
             echo "Creating archive for windows-x64..."
@@ -292,16 +317,17 @@ jobs:
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: v${{ steps.version.outputs.version }}
-          name: LiveKit C++ SDK v${{ steps.version.outputs.version }}
+          name: LiveKit C++ SDK v${{ steps.version.outputs.version }} (Jammy Linux)
           draft: true
           files: ${{ github.workspace }}/release-assets/*
-          generate_release_notes: true
+          body: |
+            Ubuntu 22.04 (Jammy) Linux builds of LiveKit C++ SDK v${{ steps.version.outputs.version }}.
+
+            Built from ref: `${{ github.event.inputs.ref }}`
+
+            | Artifact | Platform | glibc |
+            |----------|----------|-------|
+            | `livekit-sdk-linux-x64-jammy-${{ steps.version.outputs.version }}.tar.gz` | Ubuntu 22.04 (ROS Humble) | <= 2.35 |
+            | `livekit-sdk-linux-arm64-jammy-${{ steps.version.outputs.version }}.tar.gz` | Ubuntu 22.04 arm64 (ROS Humble) | <= 2.35 |
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ---------- Publish Docs Job ----------
-  publish-docs:
-    name: Publish Documentation
-    needs: release
-    uses: ./.github/workflows/publish-docs.yml
-    secrets: inherit
