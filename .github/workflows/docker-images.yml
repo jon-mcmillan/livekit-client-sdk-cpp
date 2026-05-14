@@ -1,23 +1,18 @@
 name: Docker Images
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - src/**
-      - include/**
-      - bridge/**
-      - client-sdk-rust/**
-      - CMakeLists.txt
-      - build.sh
-      - build.cmd
-      - build.h.in
-      - .build-info.json.in
-      - CMakePresets.json
-      - cmake/**
-      - data/**
-      - docker/Dockerfile.base
-      - docker/Dockerfile.sdk
+  workflow_dispatch:
+    inputs:
+      build_base:
+        description: 'Build and publish the base Docker image'
+        required: true
+        type: boolean
+        default: false
+      build_sdk:
+        description: 'Build and publish the SDK Docker image'
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -61,6 +56,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            base_changed="${{ inputs.build_base }}"
+            sdk_changed="${{ inputs.build_sdk }}"
+            echo "Manual dispatch selected:"
+            echo "  build_base=${base_changed}"
+            echo "  build_sdk=${sdk_changed}"
+            echo "base_changed=${base_changed}" >> "$GITHUB_OUTPUT"
+            echo "sdk_changed=${sdk_changed}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
             changed_files="$(git ls-tree -r --name-only "${{ github.sha }}")"
